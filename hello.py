@@ -12,6 +12,8 @@ noise_dim = 16
 # use RMSProp instead of Adam
 # train more iteration of D
 
+# only use faces/   images/
+
 class D(nn.Module):
     def __init__(self) -> None:
         super().__init__()
@@ -71,6 +73,13 @@ def test():
     noise = sample_batch_noise(batch_size, noise_dim)
     output_images = generator(noise)
 
-if __name__ == 'main':
-
+if __name__ == '__main__':
+    import os
+    dir2 = '.\\dataset\\anime_data\\testing_tags.txt'
+    print(dir2)
+    if os.path.exists(dir2):
+        print('yes')
+    else:
+        print('no')
+    print('done')
     exit()
