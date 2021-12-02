@@ -12,8 +12,8 @@ from torch.utils.tensorboard import SummaryWriter
 ANIME_DATA = './dataset/anime_data/faces/'
 EXTRA_DATA = './dataset/extra_data/images/'
 max_iteration = 50000
-d_update = 1
-g_update = 10
+d_update = 10
+g_update = 1
 batch_size = 256
 noise_dim = 100
 d_lr = 0.0002
@@ -71,10 +71,10 @@ class G(nn.Module):
         self.conv = nn.Sequential(
             nn.ConvTranspose2d(in_channels = 128, out_channels = 128, kernel_size = 5, stride=2, padding=2,output_padding=1),
             nn.Conv2d(in_channels=128,out_channels=128,kernel_size=5,padding=2),
-            nn.LeakyReLU(),
+            #nn.LeakyReLU(),
             nn.ConvTranspose2d(in_channels = 128, out_channels = 128, kernel_size = 5, stride=2, padding=2,output_padding=1),
             nn.Conv2d(in_channels=128,out_channels=64,kernel_size=5,padding=2),
-            nn.LeakyReLU(),
+            #nn.LeakyReLU(),
             nn.Conv2d(in_channels=64,out_channels=3,kernel_size=5,padding=2),
             nn.Tanh()
         )
@@ -96,7 +96,7 @@ def train(discriminator, generator, dataloader, device, writer):
     for i in range(max_iteration):
         for iter, (img) in enumerate(dataloader):
             real_img = img.to(device)
-            if iter % 5 == 0:
+            if iter % d_update == 0:
                 reals = discriminator(real_img)
                 reals = reals[:,1].view(-1)
                 noises = torch.randn(size = (batch_size, noise_dim)).to(device)
@@ -107,8 +107,9 @@ def train(discriminator, generator, dataloader, device, writer):
                 d_optimizer.zero_grad()
                 d_loss.backward()
                 d_optimizer.step()
+                loss = d_loss.to('cpu').detach().numpy()
                 print('d_loss: ', d_loss.to('cpu').detach().numpy())
-            else:
+            if iter % g_update == 0:
                 noises = torch.randn(size = (batch_size, noise_dim)).to(device)
                 fake_image = generator(noises)
                 output = discriminator(fake_image)
@@ -117,13 +118,15 @@ def train(discriminator, generator, dataloader, device, writer):
                 g_optimizer.zero_grad()
                 g_loss.backward()
                 g_optimizer.step()
+                loss = g_loss.to('cpu').detach().numpy()
                 print('g_loss: ', g_loss.to('cpu').detach().numpy())
-        if (i + 1) % 1 == 0:
-            print('out')
-            noise = torch.randn(size = (1, noise_dim)).to(device)
-            fake_images = generator(noise)
-            fake_images = fake_images.to('cpu')
-            writer.add_image(tag='title01', img_tensor= fake_images[0], global_step = i, dataformats='CHW')
+        print('out ', i)
+        noise = torch.randn(size = (1, noise_dim)).to(device)
+        fake_images = generator(noise)
+        fake_images += 1
+        fake_images /=2
+        fake_images = fake_images.to('cpu')
+        writer.add_image(tag='title01', img_tensor= fake_images[0], global_step = i, dataformats='CHW')
 
 
 def test():
@@ -163,7 +166,7 @@ if __name__ == '__main__':
         tv.transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
     ])
     training_data = Dataset0(data = loadData(), transform = transforms)
-    dataloader = DataLoader(training_data, batch_size = batch_size)
+    dataloader = DataLoader(training_data, batch_size = batch_size, drop_last=True)
     train(discriminator, generator, dataloader, device, writer)
     print('done')
     exit()
