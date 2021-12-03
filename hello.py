@@ -12,12 +12,13 @@ from torch.utils.tensorboard import SummaryWriter
 ANIME_DATA = './dataset/anime_data/faces/'
 EXTRA_DATA = './dataset/extra_data/images/'
 max_iteration = 50000
-d_update = 10
-g_update = 1
+d_update = 1
+g_update = 5
 batch_size = 256
 noise_dim = 100
 d_lr = 0.0002
 g_lr = 0.0002
+save_every = 20
 
 # clip weight of D
 # use RMSProp instead of Adam
@@ -43,12 +44,16 @@ class D(nn.Module):
         super().__init__()
         self.conv = nn.Sequential(
             nn.Conv2d(in_channels=3,out_channels=32,kernel_size=3,padding=1),
+            nn.BatchNorm2d(32),
             nn.ReLU(),
             nn.Conv2d(in_channels=32,out_channels=64,kernel_size=5, stride=2, padding=2), #16, 48, 48
+            nn.BatchNorm2d(64),
             nn.ReLU(),
             nn.Conv2d(in_channels=64,out_channels=128,kernel_size=5, stride=2,padding=2), #16, 24, 24
+            nn.BatchNorm2d(128),
             nn.ReLU(),
             nn.Conv2d(in_channels=128,out_channels=256,kernel_size=5, stride=2,padding=2),
+            nn.BatchNorm2d(256),
             nn.ReLU(),
         )
         self.fc = nn.Sequential(
@@ -71,10 +76,12 @@ class G(nn.Module):
         self.conv = nn.Sequential(
             nn.ConvTranspose2d(in_channels = 128, out_channels = 128, kernel_size = 5, stride=2, padding=2,output_padding=1),
             nn.Conv2d(in_channels=128,out_channels=128,kernel_size=5,padding=2),
-            #nn.LeakyReLU(),
+            nn.BatchNorm2d(128),
+            nn.LeakyReLU(),
             nn.ConvTranspose2d(in_channels = 128, out_channels = 128, kernel_size = 5, stride=2, padding=2,output_padding=1),
             nn.Conv2d(in_channels=128,out_channels=64,kernel_size=5,padding=2),
-            #nn.LeakyReLU(),
+            nn.BatchNorm2d(64),
+            nn.LeakyReLU(),
             nn.Conv2d(in_channels=64,out_channels=3,kernel_size=5,padding=2),
             nn.Tanh()
         )
@@ -93,10 +100,12 @@ def train(discriminator, generator, dataloader, device, writer):
     true_labels = torch.ones(batch_size).to(device)
     fake_labels = torch.zeros(batch_size).to(device)
     mix_labels = torch.cat([true_labels, fake_labels], dim = 0).to(device)
+    train_d = 0
     for i in range(max_iteration):
         for iter, (img) in enumerate(dataloader):
             real_img = img.to(device)
             if iter % d_update == 0:
+            # if train_d < 1:
                 reals = discriminator(real_img)
                 reals = reals[:,1].view(-1)
                 noises = torch.randn(size = (batch_size, noise_dim)).to(device)
@@ -109,7 +118,10 @@ def train(discriminator, generator, dataloader, device, writer):
                 d_optimizer.step()
                 loss = d_loss.to('cpu').detach().numpy()
                 print('d_loss: ', d_loss.to('cpu').detach().numpy())
+                if loss < 0.001:
+                    train_d = 5
             if iter % g_update == 0:
+            # else:
                 noises = torch.randn(size = (batch_size, noise_dim)).to(device)
                 fake_image = generator(noises)
                 output = discriminator(fake_image)
@@ -120,13 +132,19 @@ def train(discriminator, generator, dataloader, device, writer):
                 g_optimizer.step()
                 loss = g_loss.to('cpu').detach().numpy()
                 print('g_loss: ', g_loss.to('cpu').detach().numpy())
+                train_d -= 5
         print('out ', i)
-        noise = torch.randn(size = (1, noise_dim)).to(device)
+        noise = torch.randn(size = (batch_size, noise_dim)).to(device)
         fake_images = generator(noise)
         fake_images += 1
         fake_images /=2
         fake_images = fake_images.to('cpu')
-        writer.add_image(tag='title01', img_tensor= fake_images[0], global_step = i, dataformats='CHW')
+        writer.add_images(tag='title01', img_tensor= fake_images, global_step = i, dataformats='NCHW')
+        writer.flush()
+        # 保存模型
+        if (i + 1) % save_every == 0:
+            torch.save(discriminator.state_dict(),  './' + 'd_{0}.pth'.format(i))
+            torch.save(generator.state_dict(),  './' + 'g_{0}.pth'.format(i))
 
 
 def test():
